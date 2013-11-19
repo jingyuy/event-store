@@ -96,7 +96,7 @@ class EventAddPage(webapp2.RequestHandler):
                     <div><input type="text" name="name"/></div>
                     <div><label>Data:</label></div>
                     <div><input type="text" name="data"/></div>
-                    <div><label>Date:</label></div>
+                    <div><label>Timestamp (e.g. 1384851641000 or leave it empty):</label></div>
                     <div><input type="text" name="timestamp"/></div>
                     <input type="submit" value="Add Event" />
                   </form>
@@ -108,15 +108,18 @@ class EventAddPage(webapp2.RequestHandler):
         if not user:
             self.redirect(users.create_login_url(self.request.uri))
 
-        key = defaultKey();
-        event = Event(parent=key)
-        event.id = time.time().__str__()
-        event.name = self.request.get('name')
-        event.data = self.request.get('data')
-        timestamp = self.request.get('timestamp')
-        event.timestamp = stringToTimestamp(timestamp);
-        event.put()
-        self.redirect('/event')
+
+        try:
+            key = defaultKey()
+            event = Event(parent=key)
+            event.name = self.request.get('name')
+            event.data = self.request.get('data')
+            timestamp = self.request.get('timestamp')
+            event.timestamp = stringToTimestamp(timestamp);
+            event.put()
+            self.redirect('/event')
+        except Exception as ex:
+            handleException(self, ex)
 
 
 class EventDeletePage(webapp2.RequestHandler):
@@ -169,7 +172,7 @@ class EventDeletePage(webapp2.RequestHandler):
 
 
 def defaultKey():
-    return db.Key.from_path('event', 'default_user_id')
+    return db.Key.from_path('Event', users.get_current_user().user_id() or 'default_user_id')
 
 def timestampNow():
     return long(round(float(dt.datetime.now().strftime('%s.%f')),3)*1000)
