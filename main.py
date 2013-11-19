@@ -1,7 +1,6 @@
 import webapp2
 from google.appengine.ext import db
 from google.appengine.api import users
-import time
 import datetime as dt
 import sys
 
@@ -26,9 +25,10 @@ class EventCountLastMinPage(webapp2.RequestHandler):
         if not user:
             self.redirect(users.create_login_url('/event'))
 
+        userId = user.user_id()
         start = timestampNow() - 60*1000
         name = self.request.get('name')
-        handleQuery(self, name, start, sys.maxsize, 10, "true")
+        handleQuery(self, userId, name, start, sys.maxsize, 10, "true")
 
 class EventCountLast5MinPage(webapp2.RequestHandler):
     def get(self):
@@ -36,9 +36,10 @@ class EventCountLast5MinPage(webapp2.RequestHandler):
         if not user:
             self.redirect(users.create_login_url('/event'))
 
+        userId = user.user_id()
         start = timestampNow() - 5*60*1000
         name = self.request.get('name')
-        handleQuery(self, name, start, sys.maxsize, 10, "true")
+        handleQuery(self, userId, name, start, sys.maxsize, 10, "true")
 
 class EventCountPage(webapp2.RequestHandler):
     def get(self):
@@ -46,6 +47,7 @@ class EventCountPage(webapp2.RequestHandler):
         if not user:
             self.redirect(users.create_login_url('/event'))
 
+        userId = user.user_id()
         delta = self.request.get('delta_millis')
         try:
             if delta:
@@ -57,7 +59,7 @@ class EventCountPage(webapp2.RequestHandler):
             return
 
         name = self.request.get('name')
-        handleQuery(self, name, start, sys.maxsize, 10, "true")
+        handleQuery(self, userId, name, start, sys.maxsize, 10, "true")
 
 
 class EventPage(webapp2.RequestHandler):
@@ -66,6 +68,7 @@ class EventPage(webapp2.RequestHandler):
         if not user:
             self.redirect(users.create_login_url('/event'))
 
+        userId = user.user_id()
         name = self.request.get('name')
         start = self.request.get('start')
         end = self.request.get('end')
@@ -83,7 +86,7 @@ class EventPage(webapp2.RequestHandler):
         if not limit:
             limit = "10"
 
-        handleQuery(self, name, start, end, limit, countOnly)
+        handleQuery(self, userId, name, start, end, limit, countOnly)
 
 
 class EventAddPage(webapp2.RequestHandler):
@@ -92,11 +95,11 @@ class EventAddPage(webapp2.RequestHandler):
                   <html>
                   <body>
                   <form action="/event/add" method="post">
-                    <div><label>Name:</label></div>
+                    <div><label>Name (e.g. git.commit or mysql.bytes_sent):</label></div>
                     <div><input type="text" name="name"/></div>
                     <div><label>Data:</label></div>
                     <div><input type="text" name="data"/></div>
-                    <div><label>Timestamp (e.g. 1384851641000 or leave it empty):</label></div>
+                    <div><label>Timestamp (e.g. 1384851641000 or the default is now):</label></div>
                     <div><input type="text" name="timestamp"/></div>
                     <input type="submit" value="Add Event" />
                   </form>
@@ -110,14 +113,16 @@ class EventAddPage(webapp2.RequestHandler):
 
 
         try:
-            key = defaultKey()
+            userId = user.user_id()
+            key = defaultKey(userId)
             event = Event(parent=key)
             event.name = self.request.get('name')
             event.data = self.request.get('data')
             timestamp = self.request.get('timestamp')
             event.timestamp = stringToTimestamp(timestamp);
             event.put()
-            self.redirect('/event')
+            self.response.headers['Content-Type'] = 'application/json'
+            self.response.write('{"status": "OK", "added_event": {"name":"%s", "data":"%s", "timestamp":%d}}' %(event.name, event.data, event.timestamp) )
         except Exception as ex:
             handleException(self, ex)
 
@@ -128,11 +133,11 @@ class EventDeletePage(webapp2.RequestHandler):
             <html>
             <body>
             <form action="/event/delete" method="post">
-                <div><label>Name:</label></div>
+                <div><label>Name(e.g. git.commit, mysql.bytes_sent):</label></div>
                 <div><input type="text" name="name"/></div>
-                <div><label>start:</label></div>
+                <div><label>start(e.g. 1384851641000 or the default is 0):</label></div>
                 <div><input type="text" name="start"/></div>
-                <div><label>end:</label></div>
+                <div><label>end(e.g. 1384851641000 or the default is the future):</label></div>
                 <div><input type="text" name="end"/></div>
                 <input type="submit" value="delete" />
             </form>
@@ -145,6 +150,7 @@ class EventDeletePage(webapp2.RequestHandler):
         if not user:
             self.redirect(users.create_login_url('/event'))
 
+        userId = user.user_id()
         name = self.request.get('name')
         start = self.request.get('start')
         end = self.request.get('end')
@@ -157,7 +163,7 @@ class EventDeletePage(webapp2.RequestHandler):
         deleteCount = 0
         try:
             while True:
-                events = queryEvents(name, start, end, 1000)
+                events = queryEvents(userId, name, start, end, 1000)
                 total = events.count()
                 for event in events:
                     event.delete()
@@ -171,8 +177,8 @@ class EventDeletePage(webapp2.RequestHandler):
         self.response.write('{"status":"OK", "delete_count": %d}' %deleteCount)
 
 
-def defaultKey():
-    return db.Key.from_path('Event', users.get_current_user().user_id() or 'default_user_id')
+def defaultKey(userId = None):
+    return db.Key.from_path('Event', userId or 'default_user_id')
 
 def timestampNow():
     return long(round(float(dt.datetime.now().strftime('%s.%f')),3)*1000)
@@ -183,24 +189,24 @@ def stringToTimestamp(date):
     else:
         return long(date)
 
-def queryEvents(name, start, end, limit):
+def queryEvents(userId, name, start, end, limit):
     if name:
         events = db.GqlQuery("SELECT * "
                              "FROM Event "
                              "WHERE ANCESTOR IS :1 AND timestamp >= :2 AND timestamp < :3 AND name = :4 ORDER BY timestamp DESC LIMIT " + str(limit),
-                             defaultKey(), long(start), long(end), name)
+                             defaultKey(userId), long(start), long(end), name)
     else:
         events = db.GqlQuery("SELECT * "
                              "FROM Event "
                              "WHERE ANCESTOR IS :1 AND timestamp >= :2 AND timestamp < :3 ORDER BY timestamp DESC LIMIT " + str(limit),
-                             defaultKey(), long(start), long(end))
+                             defaultKey(userId), long(start), long(end))
     return events
 
 
 
-def handleQuery(self, name, start, end, limit, countOnly):
+def handleQuery(self, userId, name, start, end, limit, countOnly):
         try:
-            events = queryEvents(name, start, end, limit)
+            events = queryEvents(userId, name, start, end, limit)
         except Exception as x:
             handleExeption(self, x)
             return
