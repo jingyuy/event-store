@@ -3,7 +3,20 @@ How to run the code:
   1. git clone https://github.com/jingyuy/event-store.git under ~DIR/
   2. Install Google App Engine: https://developers.google.com/appengine/downloads
   3. Open Google App Engine: File -> Add Existing Application -> Choose
-     the path of ~DIR/event-store/ -> Set Port to 9082
+     the path of ~DIR/event-store/ -> Set Port to 9082 -> Click "Add"
+  4. In Google App Engine, choose the application of "event-store" and
+     click "Run"
+
+Now the server is ready.
+
+
+To add some data:
+  http://localhost:9082/event/add
+
+To show all events:
+  http://localhost:9082/event
+
+Accomplished Assignments:
 
  * The set of events with a given name (or all events if name is unspecified)
   http://localhost:9082/event?name=git.commit
